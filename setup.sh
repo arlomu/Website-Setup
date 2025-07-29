@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Farbdefinitionen
+# Color definitions
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-# Pfade und Konfiguration
+# Paths and configuration
 SSL_DIR="./ssl"
 PUBLIC_DIR="./public"
 PNG_DIR="$PUBLIC_DIR/png"
@@ -15,20 +15,20 @@ CONFIG_FILE="./config.yml"
 SERVER_PID_FILE="./server.pid"
 LOG_FILE="./server.log"
 
-# Funktionen
+# Functions
 create_ssl_cert() {
-    echo -e "${YELLOW}Erstelle SSL-Zertifikat...${NC}"
+    echo -e "${YELLOW}Creating SSL certificate...${NC}"
     mkdir -p "$SSL_DIR"
     openssl req -x509 -newkey rsa:8192 -sha256 -days 3650 -nodes \
         -keyout "$SSL_DIR/server.key" -out "$SSL_DIR/server.crt" \
         -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null
-    
+
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}SSL-Zertifikat erfolgreich erstellt!${NC}"
+        echo -e "${GREEN}SSL certificate created successfully!${NC}"
         echo -e "Key: ${BLUE}${SSL_DIR}/server.key${NC}"
         echo -e "Cert: ${BLUE}${SSL_DIR}/server.crt${NC}"
     else
-        echo -e "${RED}Fehler beim Erstellen des SSL-Zertifikats!${NC}"
+        echo -e "${RED}Error creating SSL certificate!${NC}"
         return 1
     fi
 }
@@ -36,93 +36,93 @@ create_ssl_cert() {
 optimize_png() {
     local input_file=$1
     local output_file=$2
-    
+
     if ! command -v pngquant &> /dev/null; then
-        echo -e "${YELLOW}pngquant nicht installiert, überspringe Optimierung${NC}"
+        echo -e "${YELLOW}pngquant not installed, skipping optimization${NC}"
         cp "$input_file" "$output_file"
         return 0
     fi
-    
+
     pngquant --quality=65-80 --force --output "$output_file" "$input_file"
-    
+
     if [ $? -eq 0 ]; then
         original_size=$(stat -c%s "$input_file")
         optimized_size=$(stat -c%s "$output_file")
         reduction=$((100 - optimized_size * 100 / original_size))
-        
-        echo -e "${GREEN}Bild optimiert!${NC} Reduzierung: ${BLUE}${reduction}%${NC}"
+
+        echo -e "${GREEN}Image optimized!${NC} Reduction: ${BLUE}${reduction}%${NC}"
         echo -e "Original: ${BLUE}$((original_size/1024)) kB${NC}"
-        echo -e "Optimiert: ${BLUE}$((optimized_size/1024)) kB${NC}"
+        echo -e "Optimized: ${BLUE}$((optimized_size/1024)) kB${NC}"
     else
-        echo -e "${YELLOW}Optimierung fehlgeschlagen, verwende Original${NC}"
+        echo -e "${YELLOW}Optimization failed, using original${NC}"
         cp "$input_file" "$output_file"
     fi
 }
 
 add_png_image() {
-    echo -e "${YELLOW}Neue PNG-Bilddatei hinzufügen${NC}"
-    
-    # Prüfe ob pngquant installiert ist
+    echo -e "${YELLOW}Add new PNG image file${NC}"
+
+    # Check if pngquant is installed
     if ! command -v pngquant &> /dev/null; then
-        echo -e "${YELLOW}Hinweis: pngquant ist nicht installiert. Bilder werden nicht optimiert.${NC}"
-        echo -e "Installation mit: ${BLUE}sudo apt-get install pngquant${NC}"
+        echo -e "${YELLOW}Note: pngquant is not installed. Images will not be optimized.${NC}"
+        echo -e "Install it with: ${BLUE}sudo apt-get install pngquant${NC}"
     fi
-    
-    read -p "Quelldatei (Pfad zum PNG-Bild): " source_file
+
+    read -p "Source file (path to PNG image): " source_file
     if [[ ! -f "$source_file" ]]; then
-        echo -e "${RED}Datei nicht gefunden!${NC}"
+        echo -e "${RED}File not found!${NC}"
         return 1
     fi
-    
+
     if [[ "$(file -b --mime-type "$source_file")" != "image/png" ]]; then
-        echo -e "${RED}Die Datei ist kein PNG-Bild!${NC}"
+        echo -e "${RED}The file is not a PNG image!${NC}"
         return 1
     fi
-    
-    read -p "Dateiname (ohne .png): " filename
+
+    read -p "Filename (without .png): " filename
     if [[ -z "$filename" ]]; then
-        echo -e "${RED}Kein Dateiname angegeben!${NC}"
+        echo -e "${RED}No filename specified!${NC}"
         return 1
     fi
-    
+
     mkdir -p "$PNG_DIR"
     output_file="$PNG_DIR/${filename}.png"
-    
+
     if [[ -f "$output_file" ]]; then
-        echo -e "${YELLOW}Datei existiert bereits. Überschreiben? (j/n)${NC}"
+        echo -e "${YELLOW}File already exists. Overwrite? (y/n)${NC}"
         read -r overwrite
-        if [[ ! "$overwrite" =~ ^[jJ]$ ]]; then
+        if [[ ! "$overwrite" =~ ^[yY]$ ]]; then
             return 1
         fi
     fi
-    
-    # Bild optimieren
+
+    # Optimize image
     optimize_png "$source_file" "$output_file"
-    
-    # HTML-Vorlage mit Bildlink erstellen
+
+    # Create HTML template with image link
     html_file="$PUBLIC_DIR/${filename}_image.html"
-    
+
     cat > "$html_file" << EOL
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bild: ${filename}</title>
+    <title>Image: ${filename}</title>
     <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            line-height: 1.6; 
-            margin: 0; 
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
             padding: 20px;
             max-width: 1000px;
             margin: 0 auto;
             text-align: center;
         }
         h1 { color: #35424a; }
-        img { 
-            max-width: 100%; 
-            height: auto; 
+        img {
+            max-width: 100%;
+            height: auto;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
             margin: 20px 0;
         }
@@ -133,65 +133,64 @@ add_png_image() {
             margin: 20px 0;
             text-align: left;
         }
-        .back-link { 
-            display: inline-block; 
-            margin-top: 20px; 
-            padding: 8px 15px; 
-            background: #35424a; 
-            color: white; 
-            text-decoration: none; 
-            border-radius: 4px; 
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 8px 15px;
+            background: #35424a;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
         }
     </style>
 </head>
 <body>
-    <h1>Bild: ${filename}</h1>
-    
+    <h1>Image: ${filename}</h1>
+
     <div class="info">
-        <p><strong>Direkter Bildlink:</strong></p>
+        <p><strong>Direct image link:</strong></p>
         <code>/png/${filename}.png</code>
-        
+
         <p><strong>HTML Code:</strong></p>
         <code>&lt;img src="/png/${filename}.png" alt="${filename}"&gt;</code>
     </div>
-    
+
     <img src="/png/${filename}.png" alt="${filename}">
-    
-    <a href="/" class="back-link">Zurück zur Startseite</a>
+
+    <a href="/" class="back-link">Back to Home</a>
 </body>
 </html>
 EOL
+    echo -e "${GREEN}Image added successfully!${NC}"
+    echo -e "Image path: ${BLUE}${output_file}${NC}"
+    echo -e "HTML page: ${BLUE}${html_file}${NC}"
+    echo -e "Direct link: ${BLUE}https://localhost/png/${filename}.png${NC}"
 
-    echo -e "${GREEN}Bild erfolgreich hinzugefügt!${NC}"
-    echo -e "Bildpfad: ${BLUE}${output_file}${NC}"
-    echo -e "HTML-Seite: ${BLUE}${html_file}${NC}"
-    echo -e "Direkter Link: ${BLUE}https://localhost/png/${filename}.png${NC}"
-    
     if [[ -f "$SERVER_PID_FILE" ]]; then
         restart_server
     fi
 }
 
 create_app_js() {
-    echo -e "${YELLOW}Erstelle app.js mit HTTP/HTTPS Support...${NC}"
-    
+    echo -e "${YELLOW}Creating app.js with HTTP/HTTPS support...${NC}"
+
     cat > app.js << 'EOL'
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
-// SSL Zertifikate
+// SSL certificates
 const sslOptions = {
     key: fs.readFileSync('./ssl/server.key'),
     cert: fs.readFileSync('./ssl/server.crt')
 };
 
-// Server Konfiguration
+// Server configuration
 const HTTP_PORT = 80;
 const HTTPS_PORT = 443;
 
-// Dateiendungen zu MIME-Typen
+// File extensions to MIME types
 const mimeTypes = {
     '.html': 'text/html',
     '.js': 'text/javascript',
@@ -205,7 +204,7 @@ const mimeTypes = {
     '.txt': 'text/plain'
 };
 
-// Cache-Control Header für statische Dateien
+// Cache-Control header for static files
 const staticFileCacheControl = {
     '.html': 'no-cache',
     '.js': 'public, max-age=604800',
@@ -216,15 +215,15 @@ const staticFileCacheControl = {
     '.ico': 'public, max-age=604800'
 };
 
-// Request Handler
+// Request handler
 const handleRequest = (req, res) => {
-    let filePath = path.join(__dirname, 'public', 
+    let filePath = path.join(__dirname, 'public',
         req.url === '/' ? 'index.html' : req.url);
-    
+
     let extname = path.extname(filePath);
     let contentType = mimeTypes[extname] || 'text/html';
 
-    // Cache-Control Header setzen
+    // Set Cache-Control header
     if (staticFileCacheControl[extname]) {
         res.setHeader('Cache-Control', staticFileCacheControl[extname]);
     }
@@ -232,69 +231,68 @@ const handleRequest = (req, res) => {
     fs.readFile(filePath, (err, content) => {
         if (err) {
             if (err.code === 'ENOENT') {
-                // Datei nicht gefunden
+                // File not found
                 fs.readFile(path.join(__dirname, 'public', '404.html'), (err, notFoundContent) => {
                     res.writeHead(404, { 'Content-Type': 'text/html' });
                     res.end(notFoundContent || '404 Not Found');
                 });
             } else {
-                // Server Fehler
+                // Server error
                 res.writeHead(500);
                 res.end(`Server Error: ${err.code}`);
             }
         } else {
-            // Erfolgreiche Antwort
+            // Successful response
             res.writeHead(200, { 'Content-Type': contentType });
             res.end(content, 'utf-8');
         }
     });
 };
 
-// Server erstellen
+// Create servers
 const httpServer = http.createServer(handleRequest);
 const httpsServer = https.createServer(sslOptions, handleRequest);
 
-// Server starten
+// Start servers
 httpServer.listen(HTTP_PORT, () => {
-    console.log(`HTTP Server läuft auf http://localhost:${HTTP_PORT}`);
+    console.log(`HTTP Server running on http://localhost:${HTTP_PORT}`);
 });
 
 httpsServer.listen(HTTPS_PORT, () => {
-    console.log(`HTTPS Server läuft auf https://localhost:${HTTPS_PORT}`);
+    console.log(`HTTPS Server running on https://localhost:${HTTPS_PORT}`);
 });
 
-// Graceful Shutdown
+// Graceful shutdown
 process.on('SIGTERM', () => {
     httpServer.close();
     httpsServer.close();
     process.exit(0);
 });
 EOL
-
-    echo -e "${GREEN}app.js erfolgreich erstellt!${NC}"
+    echo -e "${GREEN}app.js created successfully!${NC}"
 }
 
 create_base_files() {
-    echo -e "${YELLOW}Erstelle Basis-Dateien...${NC}"
-    
-    # Öffentliches Verzeichnis
+    echo -e "${YELLOW}Creating base files...${NC}"
+
+    # Public directory
     mkdir -p "$PUBLIC_DIR"
     mkdir -p "$PNG_DIR"
-    
+
     # Index HTML
     cat > "$PUBLIC_DIR/index.html" << 'EOL'
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mein NodeJS Server</title>
+    <title>My NodeJS Server</title>
     <style>
         body { font-family: Arial, sans-serif; line-height: 1.6; margin: 0; padding: 20px; }
         header { background: #35424a; color: white; padding: 20px; text-align: center; }
         .container { max-width: 800px; margin: 0 auto; }
         .menu { margin: 20px 0; }
-        .menu a { display: inline-block; margin: 0 10px 10px 0; padding: 8px 15px; 
+        .menu a { display: inline-block; margin: 0 10px 10px 0; padding: 8px 15px;
                  background: #35424a; color: white; text-decoration: none; border-radius: 4px; }
         .menu a:hover { background: #4e5d6c; }
         .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; }
@@ -305,39 +303,38 @@ create_base_files() {
 </head>
 <body>
     <header>
-        <h1>Willkommen auf meinem Server</h1>
+        <h1>Welcome to My Server</h1>
     </header>
-    
+
     <div class="container">
         <div class="menu">
-            <a href="/">Startseite</a>
+            <a href="/">Home</a>
             <a href="/info.html">Server Info</a>
-            <a href="/add_image.html">Bild hinzufügen</a>
+            <a href="/add_image.html">Add Image</a>
         </div>
-        
-        <h2>Funktionen</h2>
+
+        <h2>Features</h2>
         <ul>
-            <li>HTTPS mit selbstsigniertem Zertifikat</li>
-            <li>Automatische Datei-Erkennung</li>
-            <li>Unterstützung für viele Dateitypen</li>
-            <li>Automatische Bildoptimierung (PNG)</li>
+            <li>HTTPS with self-signed certificate</li>
+            <li>Automatic file detection</li>
+            <li>Support for many file types</li>
+            <li>Automatic image optimization (PNG)</li>
         </ul>
-        
-        <h2>Bilder</h2>
+
+        <h2>Images</h2>
         <div class="image-grid" id="image-grid">
-            <!-- Bilder werden dynamisch geladen -->
+            <!-- Images will be loaded dynamically -->
         </div>
     </div>
-    
-    <footer>
-        <p>Server gestartet am <span id="server-date"></span></p>
-    </footer>
 
+    <footer>
+        <p>Server started on <span id="server-date"></span></p>
+    </footer>
     <script>
-        // Server-Datum anzeigen
+        // Display server date
         document.getElementById('server-date').textContent = new Date().toLocaleString();
-        
-        // Verfügbare Bilder laden
+
+        // Load available images
         fetch('/png-list')
             .then(response => response.json())
             .then(images => {
@@ -348,7 +345,7 @@ create_base_files() {
                     imageItem.innerHTML = `
                         <img src="/png/${image}" alt="${image}">
                         <div>${image}</div>
-                        <a href="/png/${image}" target="_blank">Vollbild</a>
+                        <a href="/png/${image}" target="_blank">Full Size</a>
                     `;
                     grid.appendChild(imageItem);
                 });
@@ -371,8 +368,8 @@ EOL
 </head>
 <body>
     <h1>Server Information</h1>
-    <pre id="server-info">Lade Informationen...</pre>
-    
+    <pre id="server-info">Loading information...</pre>
+
     <script>
         fetch('/server-info')
             .then(response => response.json())
@@ -397,25 +394,25 @@ EOL
 </head>
 <body>
     <h1>404</h1>
-    <p>Die angeforderte Seite wurde nicht gefunden.</p>
-    <p><a href="/">Zurück zur Startseite</a></p>
+    <p>The requested page was not found.</p>
+    <p><a href="/">Back to Home</a></p>
 </body>
 </html>
 EOL
 
-    # Bild hinzufügen HTML
+    # Add Image HTML
     cat > "$PUBLIC_DIR/add_image.html" << 'EOL'
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bild hinzufügen</title>
+    <title>Add Image</title>
     <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            line-height: 1.6; 
-            margin: 0; 
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
             padding: 20px;
             max-width: 800px;
             margin: 0 auto;
@@ -437,65 +434,65 @@ EOL
             cursor: pointer;
         }
         button:hover { background: #4e5d6c; }
-        .back-link { 
-            display: inline-block; 
-            margin-top: 20px; 
-            padding: 8px 15px; 
-            background: #f0f0f0; 
-            color: #333; 
-            text-decoration: none; 
-            border-radius: 4px; 
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 8px 15px;
+            background: #f0f0f0;
+            color: #333;
+            text-decoration: none;
+            border-radius: 4px;
         }
     </style>
 </head>
 <body>
-    <h1>Bild hinzufügen</h1>
-    
+    <h1>Add Image</h1>
+
     <form id="upload-form">
         <div class="form-group">
-            <label for="image-file">PNG-Bild auswählen:</label>
+            <label for="image-file">Select PNG Image:</label>
             <input type="file" id="image-file" accept=".png" required>
         </div>
-        
+
         <div class="form-group">
-            <label for="image-name">Dateiname (ohne .png):</label>
-            <input type="text" id="image-name" placeholder="mein-bild" required>
+            <label for="image-name">Filename (without .png):</label>
+            <input type="text" id="image-name" placeholder="my-image" required>
         </div>
-        
-        <button type="submit">Bild hochladen</button>
+
+        <button type="submit">Upload Image</button>
     </form>
-    
+
     <div id="upload-status" style="margin-top: 20px;"></div>
-    
-    <a href="/" class="back-link">Zurück zur Startseite</a>
-    
+
+    <a href="/" class="back-link">Back to Home</a>
+
     <script>
         document.getElementById('upload-form').addEventListener('submit', function(e) {
             e.preventDefault();
-            
+
             const fileInput = document.getElementById('image-file');
             const nameInput = document.getElementById('image-name');
             const statusDiv = document.getElementById('upload-status');
-            
+
             const file = fileInput.files[0];
             const filename = nameInput.value.trim();
-            
+
             if (!file || !filename) {
-                statusDiv.innerHTML = '<p style="color: red;">Bitte füllen Sie alle Felder aus!</p>';
+                statusDiv.innerHTML = '<p style="color: red;">Please fill in all fields!</p>';
                 return;
             }
-            
+
             if (file.type !== 'image/png') {
-                statusDiv.innerHTML = '<p style="color: red;">Nur PNG-Dateien sind erlaubt!</p>';
+                statusDiv.innerHTML = '<p style="color: red;">Only PNG files are allowed!</p>';
                 return;
             }
-            
+
             const formData = new FormData();
             formData.append('image', file);
             formData.append('name', filename);
-            
-            statusDiv.innerHTML = '<p>Bild wird hochgeladen und optimiert...</p>';
-            
+
+            statusDiv.innerHTML = '<p>Uploading and optimizing image...</p>';
+
             fetch('/upload-png', {
                 method: 'POST',
                 body: formData
@@ -504,18 +501,18 @@ EOL
             .then(data => {
                 if (data.success) {
                     statusDiv.innerHTML = `
-                        <p style="color: green;">Bild erfolgreich hochgeladen!</p>
-                        <p><strong>Direkter Link:</strong> <a href="${data.imageUrl}" target="_blank">${data.imageUrl}</a></p>
+                        <p style="color: green;">Image uploaded successfully!</p>
+                        <p><strong>Direct Link:</strong> <a href="${data.imageUrl}" target="_blank">${data.imageUrl}</a></p>
                         <p><strong>HTML Code:</strong></p>
                         <code>&lt;img src="${data.imageUrl}" alt="${filename}"&gt;</code>
-                        <p><a href="${data.htmlUrl}" target="_blank">Zur Bildseite</a></p>
+                        <p><a href="${data.htmlUrl}" target="_blank">View Image Page</a></p>
                     `;
                 } else {
-                    statusDiv.innerHTML = `<p style="color: red;">Fehler: ${data.message}</p>`;
+                    statusDiv.innerHTML = `<p style="color: red;">Error: ${data.message}</p>`;
                 }
             })
             .catch(error => {
-                statusDiv.innerHTML = `<p style="color: red;">Fehler beim Hochladen: ${error.message}</p>`;
+                statusDiv.innerHTML = `<p style="color: red;">Upload error: ${error.message}</p>`;
             });
         });
     </script>
@@ -523,68 +520,67 @@ EOL
 </html>
 EOL
 
-    echo -e "${GREEN}Basis-Dateien erfolgreich erstellt!${NC}"
+    echo -e "${GREEN}Base files created successfully!${NC}"
 }
 
 add_html_file() {
-    echo -e "${YELLOW}Neue HTML-Datei hinzufügen${NC}"
-    read -p "Dateiname (ohne .html): " filename
-    
+    echo -e "${YELLOW}Add new HTML file${NC}"
+    read -p "Filename (without .html): " filename
+
     if [[ -z "$filename" ]]; then
-        echo -e "${RED}Kein Dateiname angegeben!${NC}"
+        echo -e "${RED}No filename specified!${NC}"
         return 1
     fi
-    
+
     html_file="$PUBLIC_DIR/${filename}.html"
-    
+
     if [[ -f "$html_file" ]]; then
-        echo -e "${YELLOW}Datei existiert bereits. Überschreiben? (j/n)${NC}"
+        echo -e "${YELLOW}File already exists. Overwrite? (y/n)${NC}"
         read -r overwrite
-        if [[ ! "$overwrite" =~ ^[jJ]$ ]]; then
+        if [[ ! "$overwrite" =~ ^[yY]$ ]]; then
             return 1
         fi
     fi
-    
+
     cat > "$html_file" << EOL
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${filename}</title>
     <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            line-height: 1.6; 
-            margin: 0; 
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
             padding: 20px;
             max-width: 800px;
             margin: 0 auto;
         }
         h1 { color: #35424a; }
-        .back-link { 
-            display: inline-block; 
-            margin-top: 20px; 
-            padding: 8px 15px; 
-            background: #35424a; 
-            color: white; 
-            text-decoration: none; 
-            border-radius: 4px; 
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 8px 15px;
+            background: #35424a;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
         }
     </style>
 </head>
 <body>
     <h1>${filename}</h1>
-    <p>Dies ist Ihre neue Seite.</p>
-    <p>Bearbeiten Sie diesen Inhalt in der Datei: <code>public/${filename}.html</code></p>
-    
-    <a href="/" class="back-link">Zurück zur Startseite</a>
+    <p>This is your new page.</p>
+    <p>Edit this content in the file: <code>public/${filename}.html</code></p>
+
+    <a href="/" class="back-link">Back to Home</a>
 </body>
 </html>
 EOL
+    echo -e "${GREEN}File ${BLUE}${html_file}${GREEN} created successfully!${NC}"
 
-    echo -e "${GREEN}Datei ${BLUE}${html_file}${GREEN} erfolgreich erstellt!${NC}"
-    
     if [[ -f "$SERVER_PID_FILE" ]]; then
         restart_server
     fi
@@ -592,24 +588,24 @@ EOL
 
 start_server() {
     if [[ -f "$SERVER_PID_FILE" ]]; then
-        echo -e "${YELLOW}Server läuft bereits (PID $(cat "$SERVER_PID_FILE"))${NC}"
+        echo -e "${YELLOW}Server is already running (PID $(cat "$SERVER_PID_FILE"))${NC}"
         return 1
     fi
-    
-    echo -e "${YELLOW}Starte Server...${NC}"
+
+    echo -e "${YELLOW}Starting server...${NC}"
     nohup node app.js >> "$LOG_FILE" 2>&1 &
     echo $! > "$SERVER_PID_FILE"
-    
+
     sleep 2
-    
+
     if ps -p $(cat "$SERVER_PID_FILE") > /dev/null; then
-        echo -e "${GREEN}Server erfolgreich gestartet!${NC}"
+        echo -e "${GREEN}Server started successfully!${NC}"
         echo -e "HTTP:  ${BLUE}http://localhost:80${NC}"
         echo -e "HTTPS: ${BLUE}https://localhost:443${NC}"
         echo -e "Logs:  ${BLUE}${LOG_FILE}${NC}"
     else
-        echo -e "${RED}Server konnte nicht gestartet werden!${NC}"
-        echo -e "Überprüfen Sie die Logs: ${BLUE}${LOG_FILE}${NC}"
+        echo -e "${RED}Failed to start server!${NC}"
+        echo -e "Check the logs: ${BLUE}${LOG_FILE}${NC}"
         rm "$SERVER_PID_FILE"
         return 1
     fi
@@ -617,18 +613,18 @@ start_server() {
 
 stop_server() {
     if [[ ! -f "$SERVER_PID_FILE" ]]; then
-        echo -e "${YELLOW}Server ist nicht gestartet${NC}"
+        echo -e "${YELLOW}Server is not started${NC}"
         return 1
     fi
-    
+
     pid=$(cat "$SERVER_PID_FILE")
-    echo -e "${YELLOW}Stoppe Server (PID $pid)...${NC}"
-    
+    echo -e "${YELLOW}Stopping server (PID $pid)...${NC}"
+
     if kill "$pid"; then
         rm "$SERVER_PID_FILE"
-        echo -e "${GREEN}Server erfolgreich gestoppt!${NC}"
+        echo -e "${GREEN}Server stopped successfully!${NC}"
     else
-        echo -e "${RED}Fehler beim Stoppen des Servers!${NC}"
+        echo -e "${RED}Failed to stop server!${NC}"
         return 1
     fi
 }
@@ -640,52 +636,52 @@ restart_server() {
 
 show_logs() {
     if [[ ! -f "$LOG_FILE" ]]; then
-        echo -e "${YELLOW}Keine Log-Datei vorhanden${NC}"
+        echo -e "${YELLOW}No log file available${NC}"
         return 1
     fi
-    
-    echo -e "${YELLOW}Letzte Log-Einträge:${NC}"
+
+    echo -e "${YELLOW}Last log entries:${NC}"
     tail -20 "$LOG_FILE"
 }
 
 clear_logs() {
     if [[ ! -f "$LOG_FILE" ]]; then
-        echo -e "${YELLOW}Keine Log-Datei vorhanden${NC}"
+        echo -e "${YELLOW}No log file available${NC}"
         return 1
     fi
-    
+
     > "$LOG_FILE"
-    echo -e "${GREEN}Logs wurden geleert!${NC}"
+    echo -e "${GREEN}Logs cleared!${NC}"
 }
 
 show_menu() {
     clear
     echo -e "${GREEN}NodeJS Server Management${NC}"
     echo -e "========================"
-    echo -e "1. Alles einrichten (SSL + Dateien + Server starten)"
-    echo -e "2. Nur SSL-Zertifikat erstellen"
-    echo -e "3. Nur Basis-Dateien erstellen"
-    echo -e "4. Server starten"
-    echo -e "5. Server stoppen"
-    echo -e "6. Server neustarten"
-    echo -e "7. Neue HTML-Datei hinzufügen"
-    echo -e "8. PNG-Bild hinzufügen"
-    echo -e "9. Logs anzeigen"
-    echo -e "10. Logs leeren"
-    echo -e "0. Beenden"
+    echo -e "1. Set up everything (SSL + Files + Start Server)"
+    echo -e "2. Create SSL certificate only"
+    echo -e "3. Create base files only"
+    echo -e "4. Start server"
+    echo -e "5. Stop server"
+    echo -e "6. Restart server"
+    echo -e "7. Add new HTML file"
+    echo -e "8. Add PNG image"
+    echo -e "9. Show logs"
+    echo -e "10. Clear logs"
+    echo -e "0. Exit"
     echo -e "========================"
-    
-    read -p "Auswahl [0-10]: " choice
-    
+
+    read -p "Select an option [0-10]: " choice
+
     case $choice in
-        1) 
+        1)
             create_ssl_cert
             create_base_files
             create_app_js
             start_server
             ;;
         2) create_ssl_cert ;;
-        3) 
+        3)
             create_base_files
             create_app_js
             ;;
@@ -697,30 +693,30 @@ show_menu() {
         9) show_logs ;;
         10) clear_logs ;;
         0) exit 0 ;;
-        *) 
-            echo -e "${RED}Ungültige Auswahl!${NC}"
+        *)
+            echo -e "${RED}Invalid option!${NC}"
             sleep 1
             ;;
     esac
-    
-    read -p "Drücken Sie eine Taste, um fortzufahren..." -n1 -s
+
+    read -p "Press any key to continue..." -n1 -s
     show_menu
 }
 
-# Hauptprogramm
+# Main program
 echo -e "${GREEN}NodeJS Server Setup Script${NC}"
 echo -e "=========================="
 
-# Prüfe auf benötigte Pakete
+# Check for required packages
 if ! command -v openssl &> /dev/null; then
-    echo -e "${RED}OpenSSL ist nicht installiert!${NC}"
-    echo -e "${YELLOW}Installieren Sie es mit: apt-get install openssl${NC}"
+    echo -e "${RED}OpenSSL is not installed!${NC}"
+    echo -e "${YELLOW}Install it with: apt-get install openssl${NC}"
     exit 1
 fi
 
 if ! command -v node &> /dev/null; then
-    echo -e "${RED}Node.js ist nicht installiert!${NC}"
-    echo -e "${YELLOW}Installieren Sie es mit: apt-get install nodejs npm${NC}"
+    echo -e "${RED}Node.js is not installed!${NC}"
+    echo -e "${YELLOW}Install it with: apt-get install nodejs npm${NC}"
     exit 1
 fi
 
