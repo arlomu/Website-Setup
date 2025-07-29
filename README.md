@@ -19,7 +19,7 @@ This script provides a convenient way to manage a NodeJS server with SSL support
 
 1. Clone this repository to your local machine.
 2. Ensure you have OpenSSL and Node.js installed on your system.
-3. Run the script using `sudo bash script_name.sh`.
+3. Run the script using `sudo bash setup.sh`.
 4. Ensure you using Sudo for no Bugs feetures.
 
 ## Usage
