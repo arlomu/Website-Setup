@@ -1,2 +1,6 @@
 ssl/server.crt
 ssl/server.key
+app.js
+package-lock.json
+server.log
+public/*
