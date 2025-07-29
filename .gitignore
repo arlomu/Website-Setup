@@ -4,3 +4,4 @@ app.js
 package-lock.json
 server.log
 public/*
+server.pid

@@ -10,6 +10,7 @@ NC='\033[0m'
 # Pfade und Konfiguration
 SSL_DIR="./ssl"
 PUBLIC_DIR="./public"
+PNG_DIR="$PUBLIC_DIR/png"
 CONFIG_FILE="./config.yml"
 SERVER_PID_FILE="./server.pid"
 LOG_FILE="./server.log"
@@ -29,6 +30,145 @@ create_ssl_cert() {
     else
         echo -e "${RED}Fehler beim Erstellen des SSL-Zertifikats!${NC}"
         return 1
+    fi
+}
+
+optimize_png() {
+    local input_file=$1
+    local output_file=$2
+    
+    if ! command -v pngquant &> /dev/null; then
+        echo -e "${YELLOW}pngquant nicht installiert, überspringe Optimierung${NC}"
+        cp "$input_file" "$output_file"
+        return 0
+    fi
+    
+    pngquant --quality=65-80 --force --output "$output_file" "$input_file"
+    
+    if [ $? -eq 0 ]; then
+        original_size=$(stat -c%s "$input_file")
+        optimized_size=$(stat -c%s "$output_file")
+        reduction=$((100 - optimized_size * 100 / original_size))
+        
+        echo -e "${GREEN}Bild optimiert!${NC} Reduzierung: ${BLUE}${reduction}%${NC}"
+        echo -e "Original: ${BLUE}$((original_size/1024)) kB${NC}"
+        echo -e "Optimiert: ${BLUE}$((optimized_size/1024)) kB${NC}"
+    else
+        echo -e "${YELLOW}Optimierung fehlgeschlagen, verwende Original${NC}"
+        cp "$input_file" "$output_file"
+    fi
+}
+
+add_png_image() {
+    echo -e "${YELLOW}Neue PNG-Bilddatei hinzufügen${NC}"
+    
+    # Prüfe ob pngquant installiert ist
+    if ! command -v pngquant &> /dev/null; then
+        echo -e "${YELLOW}Hinweis: pngquant ist nicht installiert. Bilder werden nicht optimiert.${NC}"
+        echo -e "Installation mit: ${BLUE}sudo apt-get install pngquant${NC}"
+    fi
+    
+    read -p "Quelldatei (Pfad zum PNG-Bild): " source_file
+    if [[ ! -f "$source_file" ]]; then
+        echo -e "${RED}Datei nicht gefunden!${NC}"
+        return 1
+    fi
+    
+    if [[ "$(file -b --mime-type "$source_file")" != "image/png" ]]; then
+        echo -e "${RED}Die Datei ist kein PNG-Bild!${NC}"
+        return 1
+    fi
+    
+    read -p "Dateiname (ohne .png): " filename
+    if [[ -z "$filename" ]]; then
+        echo -e "${RED}Kein Dateiname angegeben!${NC}"
+        return 1
+    fi
+    
+    mkdir -p "$PNG_DIR"
+    output_file="$PNG_DIR/${filename}.png"
+    
+    if [[ -f "$output_file" ]]; then
+        echo -e "${YELLOW}Datei existiert bereits. Überschreiben? (j/n)${NC}"
+        read -r overwrite
+        if [[ ! "$overwrite" =~ ^[jJ]$ ]]; then
+            return 1
+        fi
+    fi
+    
+    # Bild optimieren
+    optimize_png "$source_file" "$output_file"
+    
+    # HTML-Vorlage mit Bildlink erstellen
+    html_file="$PUBLIC_DIR/${filename}_image.html"
+    
+    cat > "$html_file" << EOL
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bild: ${filename}</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            line-height: 1.6; 
+            margin: 0; 
+            padding: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        h1 { color: #35424a; }
+        img { 
+            max-width: 100%; 
+            height: auto; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            margin: 20px 0;
+        }
+        .info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        .back-link { 
+            display: inline-block; 
+            margin-top: 20px; 
+            padding: 8px 15px; 
+            background: #35424a; 
+            color: white; 
+            text-decoration: none; 
+            border-radius: 4px; 
+        }
+    </style>
+</head>
+<body>
+    <h1>Bild: ${filename}</h1>
+    
+    <div class="info">
+        <p><strong>Direkter Bildlink:</strong></p>
+        <code>/png/${filename}.png</code>
+        
+        <p><strong>HTML Code:</strong></p>
+        <code>&lt;img src="/png/${filename}.png" alt="${filename}"&gt;</code>
+    </div>
+    
+    <img src="/png/${filename}.png" alt="${filename}">
+    
+    <a href="/" class="back-link">Zurück zur Startseite</a>
+</body>
+</html>
+EOL
+
+    echo -e "${GREEN}Bild erfolgreich hinzugefügt!${NC}"
+    echo -e "Bildpfad: ${BLUE}${output_file}${NC}"
+    echo -e "HTML-Seite: ${BLUE}${html_file}${NC}"
+    echo -e "Direkter Link: ${BLUE}https://localhost/png/${filename}.png${NC}"
+    
+    if [[ -f "$SERVER_PID_FILE" ]]; then
+        restart_server
     fi
 }
 
@@ -65,6 +205,17 @@ const mimeTypes = {
     '.txt': 'text/plain'
 };
 
+// Cache-Control Header für statische Dateien
+const staticFileCacheControl = {
+    '.html': 'no-cache',
+    '.js': 'public, max-age=604800',
+    '.css': 'public, max-age=604800',
+    '.png': 'public, max-age=604800',
+    '.jpg': 'public, max-age=604800',
+    '.svg': 'public, max-age=604800',
+    '.ico': 'public, max-age=604800'
+};
+
 // Request Handler
 const handleRequest = (req, res) => {
     let filePath = path.join(__dirname, 'public', 
@@ -72,6 +223,11 @@ const handleRequest = (req, res) => {
     
     let extname = path.extname(filePath);
     let contentType = mimeTypes[extname] || 'text/html';
+
+    // Cache-Control Header setzen
+    if (staticFileCacheControl[extname]) {
+        res.setHeader('Cache-Control', staticFileCacheControl[extname]);
+    }
 
     fs.readFile(filePath, (err, content) => {
         if (err) {
@@ -123,6 +279,7 @@ create_base_files() {
     
     # Öffentliches Verzeichnis
     mkdir -p "$PUBLIC_DIR"
+    mkdir -p "$PNG_DIR"
     
     # Index HTML
     cat > "$PUBLIC_DIR/index.html" << 'EOL'
@@ -139,6 +296,10 @@ create_base_files() {
         .menu { margin: 20px 0; }
         .menu a { display: inline-block; margin: 0 10px 10px 0; padding: 8px 15px; 
                  background: #35424a; color: white; text-decoration: none; border-radius: 4px; }
+        .menu a:hover { background: #4e5d6c; }
+        .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; }
+        .image-item { border: 1px solid #ddd; padding: 10px; border-radius: 5px; text-align: center; }
+        .image-item img { max-width: 100%; height: auto; }
         footer { margin-top: 20px; text-align: center; color: #666; }
     </style>
 </head>
@@ -151,6 +312,7 @@ create_base_files() {
         <div class="menu">
             <a href="/">Startseite</a>
             <a href="/info.html">Server Info</a>
+            <a href="/add_image.html">Bild hinzufügen</a>
         </div>
         
         <h2>Funktionen</h2>
@@ -158,12 +320,40 @@ create_base_files() {
             <li>HTTPS mit selbstsigniertem Zertifikat</li>
             <li>Automatische Datei-Erkennung</li>
             <li>Unterstützung für viele Dateitypen</li>
+            <li>Automatische Bildoptimierung (PNG)</li>
         </ul>
+        
+        <h2>Bilder</h2>
+        <div class="image-grid" id="image-grid">
+            <!-- Bilder werden dynamisch geladen -->
+        </div>
     </div>
     
     <footer>
-        <p>Server gestartet am $(date +"%d.%m.%Y %H:%M:%S")</p>
+        <p>Server gestartet am <span id="server-date"></span></p>
     </footer>
+
+    <script>
+        // Server-Datum anzeigen
+        document.getElementById('server-date').textContent = new Date().toLocaleString();
+        
+        // Verfügbare Bilder laden
+        fetch('/png-list')
+            .then(response => response.json())
+            .then(images => {
+                const grid = document.getElementById('image-grid');
+                images.forEach(image => {
+                    const imageItem = document.createElement('div');
+                    imageItem.className = 'image-item';
+                    imageItem.innerHTML = `
+                        <img src="/png/${image}" alt="${image}">
+                        <div>${image}</div>
+                        <a href="/png/${image}" target="_blank">Vollbild</a>
+                    `;
+                    grid.appendChild(imageItem);
+                });
+            });
+    </script>
 </body>
 </html>
 EOL
@@ -209,6 +399,126 @@ EOL
     <h1>404</h1>
     <p>Die angeforderte Seite wurde nicht gefunden.</p>
     <p><a href="/">Zurück zur Startseite</a></p>
+</body>
+</html>
+EOL
+
+    # Bild hinzufügen HTML
+    cat > "$PUBLIC_DIR/add_image.html" << 'EOL'
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bild hinzufügen</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            line-height: 1.6; 
+            margin: 0; 
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background: #35424a;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover { background: #4e5d6c; }
+        .back-link { 
+            display: inline-block; 
+            margin-top: 20px; 
+            padding: 8px 15px; 
+            background: #f0f0f0; 
+            color: #333; 
+            text-decoration: none; 
+            border-radius: 4px; 
+        }
+    </style>
+</head>
+<body>
+    <h1>Bild hinzufügen</h1>
+    
+    <form id="upload-form">
+        <div class="form-group">
+            <label for="image-file">PNG-Bild auswählen:</label>
+            <input type="file" id="image-file" accept=".png" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="image-name">Dateiname (ohne .png):</label>
+            <input type="text" id="image-name" placeholder="mein-bild" required>
+        </div>
+        
+        <button type="submit">Bild hochladen</button>
+    </form>
+    
+    <div id="upload-status" style="margin-top: 20px;"></div>
+    
+    <a href="/" class="back-link">Zurück zur Startseite</a>
+    
+    <script>
+        document.getElementById('upload-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('image-file');
+            const nameInput = document.getElementById('image-name');
+            const statusDiv = document.getElementById('upload-status');
+            
+            const file = fileInput.files[0];
+            const filename = nameInput.value.trim();
+            
+            if (!file || !filename) {
+                statusDiv.innerHTML = '<p style="color: red;">Bitte füllen Sie alle Felder aus!</p>';
+                return;
+            }
+            
+            if (file.type !== 'image/png') {
+                statusDiv.innerHTML = '<p style="color: red;">Nur PNG-Dateien sind erlaubt!</p>';
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('image', file);
+            formData.append('name', filename);
+            
+            statusDiv.innerHTML = '<p>Bild wird hochgeladen und optimiert...</p>';
+            
+            fetch('/upload-png', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    statusDiv.innerHTML = `
+                        <p style="color: green;">Bild erfolgreich hochgeladen!</p>
+                        <p><strong>Direkter Link:</strong> <a href="${data.imageUrl}" target="_blank">${data.imageUrl}</a></p>
+                        <p><strong>HTML Code:</strong></p>
+                        <code>&lt;img src="${data.imageUrl}" alt="${filename}"&gt;</code>
+                        <p><a href="${data.htmlUrl}" target="_blank">Zur Bildseite</a></p>
+                    `;
+                } else {
+                    statusDiv.innerHTML = `<p style="color: red;">Fehler: ${data.message}</p>`;
+                }
+            })
+            .catch(error => {
+                statusDiv.innerHTML = `<p style="color: red;">Fehler beim Hochladen: ${error.message}</p>`;
+            });
+        });
+    </script>
 </body>
 </html>
 EOL
@@ -359,12 +669,13 @@ show_menu() {
     echo -e "5. Server stoppen"
     echo -e "6. Server neustarten"
     echo -e "7. Neue HTML-Datei hinzufügen"
-    echo -e "8. Logs anzeigen"
-    echo -e "9. Logs leeren"
+    echo -e "8. PNG-Bild hinzufügen"
+    echo -e "9. Logs anzeigen"
+    echo -e "10. Logs leeren"
     echo -e "0. Beenden"
     echo -e "========================"
     
-    read -p "Auswahl [0-9]: " choice
+    read -p "Auswahl [0-10]: " choice
     
     case $choice in
         1) 
@@ -382,8 +693,9 @@ show_menu() {
         5) stop_server ;;
         6) restart_server ;;
         7) add_html_file ;;
-        8) show_logs ;;
-        9) clear_logs ;;
+        8) add_png_image ;;
+        9) show_logs ;;
+        10) clear_logs ;;
         0) exit 0 ;;
         *) 
             echo -e "${RED}Ungültige Auswahl!${NC}"
