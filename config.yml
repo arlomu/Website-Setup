@@ -1,0 +1,10 @@
+server:
+  httpPort: 80
+  httpsPort: 443
+  statusEndpoint: /api/status
+
+rateLimit:
+  enabled: true
+  windowMs: 60000
+  maxRequests: 60
+  message: "Too many requests, please try again later."
