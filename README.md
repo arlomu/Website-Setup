@@ -6,6 +6,8 @@ This script provides a convenient way to manage a NodeJS server with SSL support
 
 - Create SSL certificates for secure HTTPS connections.
 - Manage server start, stop, and restart.
+- Provide a status endpoint at `/api/status`.
+- Configure settings (ports, status endpoint, rate limiting) via `config.yml`.
 - Add and optimize PNG images.
 - Create and manage HTML files.
 - View and clear server logs.
@@ -34,6 +36,18 @@ This script provides a convenient way to manage a NodeJS server with SSL support
 8. **Add PNG image**: Optimizes and adds a PNG image to the server.
 9. **Show logs**: Displays the last 20 log entries.
 10. **Clear logs**: Clears the server log file.
+
+## Configuration
+
+The server reads settings from `config.yml`:
+
+- `server.httpPort`: HTTP port.
+- `server.httpsPort`: HTTPS port.
+- `server.statusEndpoint`: Status endpoint path (default `/api/status`).
+- `rateLimit.enabled`: Enable/disable rate limiting.
+- `rateLimit.windowMs`: Time window in milliseconds.
+- `rateLimit.maxRequests`: Maximum requests per window per IP.
+- `rateLimit.message`: Error message for rate limited responses.
 
 ## Notes
 

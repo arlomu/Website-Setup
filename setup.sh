@@ -16,6 +16,26 @@ SERVER_PID_FILE="./server.pid"
 LOG_FILE="./server.log"
 
 # Functions
+create_config_file() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        return 0
+    fi
+
+    cat > "$CONFIG_FILE" << 'EOL'
+server:
+  httpPort: 80
+  httpsPort: 443
+  statusEndpoint: /api/status
+
+rateLimit:
+  enabled: true
+  windowMs: 60000
+  maxRequests: 60
+  message: "Too many requests, please try again later."
+EOL
+    echo -e "${GREEN}Config file created: ${BLUE}${CONFIG_FILE}${NC}"
+}
+
 create_ssl_cert() {
     echo -e "${YELLOW}Creating SSL certificate...${NC}"
     mkdir -p "$SSL_DIR"
@@ -180,6 +200,75 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
+const CONFIG_FILE = path.join(__dirname, 'config.yml');
+
+const defaultConfig = {
+    server: {
+        httpPort: 80,
+        httpsPort: 443,
+        statusEndpoint: '/api/status'
+    },
+    rateLimit: {
+        enabled: true,
+        windowMs: 60000,
+        maxRequests: 60,
+        message: 'Too many requests, please try again later.'
+    }
+};
+
+const stripInlineComment = (value) => {
+    if (value.startsWith('"') || value.startsWith("'")) {
+        return value;
+    }
+    return value.split(/\s+#/)[0];
+};
+
+const parseConfigValue = (value) => {
+    const cleaned = stripInlineComment(value).trim();
+    if (cleaned === 'true') return true;
+    if (cleaned === 'false') return false;
+    if (!Number.isNaN(Number(cleaned))) return Number(cleaned);
+    return cleaned.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
+};
+
+const loadConfig = () => {
+    if (!fs.existsSync(CONFIG_FILE)) {
+        return defaultConfig;
+    }
+
+    const config = { server: {}, rateLimit: {} };
+    const lines = fs.readFileSync(CONFIG_FILE, 'utf-8').split(/\r?\n/);
+    let section = null;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) {
+            continue;
+        }
+
+        if (!line.startsWith(' ')) {
+            const [key] = trimmed.split(':');
+            section = key;
+            continue;
+        }
+
+        const match = line.match(/^\s+([^:]+):\s*(.+)$/);
+        if (!match || !section) {
+            continue;
+        }
+
+        const [, key, rawValue] = match;
+        config[section][key.trim()] = parseConfigValue(rawValue.trim());
+    }
+
+    return {
+        server: { ...defaultConfig.server, ...config.server },
+        rateLimit: { ...defaultConfig.rateLimit, ...config.rateLimit }
+    };
+};
+
+const config = loadConfig();
+
 // SSL certificates
 const sslOptions = {
     key: fs.readFileSync('./ssl/server.key'),
@@ -187,8 +276,27 @@ const sslOptions = {
 };
 
 // Server configuration
-const HTTP_PORT = 80;
-const HTTPS_PORT = 443;
+const HTTP_PORT = config.server.httpPort;
+const HTTPS_PORT = config.server.httpsPort;
+const STATUS_ENDPOINT = config.server.statusEndpoint;
+
+const rateLimitState = new Map();
+
+const isRateLimited = (req) => {
+    if (!config.rateLimit.enabled) {
+        return false;
+    }
+
+    const ip = req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const windowStart = now - config.rateLimit.windowMs;
+    const history = rateLimitState.get(ip) || [];
+    const updatedHistory = history.filter((timestamp) => timestamp > windowStart);
+    updatedHistory.push(now);
+    rateLimitState.set(ip, updatedHistory);
+
+    return updatedHistory.length > config.rateLimit.maxRequests;
+};
 
 // File extensions to MIME types
 const mimeTypes = {
@@ -217,6 +325,22 @@ const staticFileCacheControl = {
 
 // Request handler
 const handleRequest = (req, res) => {
+    if (isRateLimited(req)) {
+        res.writeHead(429, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: config.rateLimit.message }));
+        return;
+    }
+
+    if (req.url === STATUS_ENDPOINT) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            status: 'ok',
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString()
+        }));
+        return;
+    }
+
     let filePath = path.join(__dirname, 'public',
         req.url === '/' ? 'index.html' : req.url);
 
@@ -274,6 +398,8 @@ EOL
 
 create_base_files() {
     echo -e "${YELLOW}Creating base files...${NC}"
+
+    create_config_file
 
     # Public directory
     mkdir -p "$PUBLIC_DIR"
